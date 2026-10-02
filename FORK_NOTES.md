@@ -25,12 +25,21 @@ Branch `fix/upload-checksum`.
   pre-processor registered by `UppyService` for both the tus and the XHR uploader. It
   hashes `file.data` in a web worker (`worker.ts`) with `hash-wasm`'s incremental SHA1,
   reading 8 MiB `Blob.slice`s, and sets `file.meta.checksum = 'sha1 <hex>'`.
-  - New dependency: `hash-wasm` (`crypto.subtle.digest` cannot hash incrementally).
+  - New dependencies: `hash-wasm` (`crypto.subtle.digest` cannot hash incrementally) and
+    `js-sha1` (fallback without WebAssembly).
   - Skipped: folders, remote (companion) files, which have no local data, and files that
     already have a checksum (retries).
   - If hashing fails, the plugin emits `upload-error` for that file. Uppy then marks
     it failed and the uploader skips it, so it is never sent without a checksum. The
     other files continue.
+- **CSP:** `hash-wasm` needs `'wasm-unsafe-eval'` in the Content-Security-Policy's
+  `script-src`, which OpenCloud's default CSP (and opencloud-compose's `csp.yaml`) does not
+  allow. The worker therefore tries `hash-wasm` once and falls back to the pure JavaScript
+  `js-sha1` (second commit on the branch, found by the torture test: without it every
+  browser upload failed). Same SHA1; JavaScript is about 7× slower (≈10 s per GB instead
+  of ≈3 s). Add `'wasm-unsafe-eval'` to `script-src` for the fast path; it allows
+  WebAssembly compilation only, not JavaScript `eval`. Without it the browser logs one CSP
+  violation per hashed file.
 - `uppyService.ts`: `checksum` added to `TUS_ALLOWED_META_FIELDS` (it is a hash of
   the transmitted bytes, so it reveals no path or cleartext). Forwards
   `preprocess-progress` / `preprocess-complete` as service topics.
